@@ -1,5 +1,7 @@
 # Inventory SaaS Platform 🚀
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/amishashank/Inventory-Management)
+
 A comprehensive, multi-tenant Full-Stack Inventory Management Software as a Service (SaaS). This unified platform allows shop owners and businesses to seamlessly manage their products, customers, billing, forecasting, and more natively within a secure web interface.
 
 ---
@@ -113,16 +115,22 @@ To run this project, make sure these are installed on your system:
 
 ## 🚀 Getting Started
 
-Follow these steps to manually bring up the environment:
+Follow these steps to clone and manually bring up the environment:
 
-### 1. Database Configuration
+### 1. Clone the Repository
+```bash
+git clone https://github.com/amishashank/Inventory-Management.git
+cd Inventory-Management
+```
+
+### 2. Database Configuration
 Launch PostgreSQL and manually create the database required for this application:
 ```sql
 CREATE DATABASE inventory_saas;
 ```
 *(With Spring JPA `ddl-auto=update`, all application tables (e.g., users, products, invoices) will be generated automatically on first startup).*
 
-### 2. Start the Backend API
+### 3. Start the Backend API
 Navigate to the backend directory and launch the Spring Boot server:
 
 ```bash
@@ -131,7 +139,7 @@ cd backend
 ```
 > The API will bind natively to `http://localhost:8081`.
 
-### 3. Start the Frontend Application
+### 4. Start the Frontend Application
 In a separate terminal, navigate into the frontend folder, install the packages, and run the developer server:
 
 ```bash
