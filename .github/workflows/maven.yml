@@ -25,8 +25,5 @@ jobs:
         distribution: 'temurin'
         cache: maven
         
-    - name: Adjust permissions for Maven wrapper
-      run: chmod +x mvnw
-      
     - name: Build with Maven
-      run: ./mvnw -B package --file pom.xml
+      run: mvn -B package --file pom.xml
