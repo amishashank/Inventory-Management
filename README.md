@@ -10,24 +10,24 @@ A comprehensive, multi-tenant Full-Stack Inventory Management Software as a Serv
 
 *(I have updated this section to match the 5 screenshots you uploaded! Save them to your `screenshots` folder as shown below:)*
 
-### 1. Secure Login (`login.png`)
-![Login Screen](screenshots/login.png)
+### 1. Secure Login
+![Login Screen](screenshots/Login.png)
 *Clean and secure authentication interface checking user credentials.*
 
-### 2. Dashboard Overview (`dashboard.png`)
-![Dashboard View](screenshots/dashboard.png)
+### 2. Dashboard Overview
+![Dashboard View](screenshots/Dashboard.png)
 *Centralized view of business metrics (Total Revenue, Active Schemes), low stock alerts, and recent bills.*
 
-### 3. Products List (`products.png`)
-![Products Table](screenshots/products.png)
+### 3. Products List
+![Products Table](screenshots/Product.png)
 *A detailed table to view, edit, and manage all your inventory items, categories, and SKUs.*
 
-### 4. Tax Invoice Generation (`invoice.png`)
-![Tax Invoice](screenshots/invoice.png)
+### 4. Tax Invoice Generation
+![Tax Invoice](screenshots/Bill-rec.png)
 *Professional, automated GST-compliant invoice generation right after checking out.*
 
-### 5. Bills History (`bills.png`)
-![Bills History](screenshots/bills.png)
+### 5. Bills History
+![Bills History](screenshots/Bills.png)
 *Complete ledger tracking customer references, payment methods, discounts, and total transaction amounts.*
 
 ---
