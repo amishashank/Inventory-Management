@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { outletAPI } from '../services/api';
 import {
   LayoutDashboard, Package, Tags, Percent, ShoppingCart, FileText,
   Menu, X, LogOut, Store
@@ -16,9 +17,18 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, activeOutletId, setActiveOutletId } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [outlets, setOutlets] = useState([]);
+
+  useEffect(() => {
+    if (user?.role === 'ROLE_ADMIN') {
+      outletAPI.getAll()
+        .then(res => setOutlets(res.data))
+        .catch(console.error);
+    }
+  }, [user]);
 
   const handleLogout = () => {
     logout();
@@ -95,7 +105,33 @@ export default function Layout() {
           <button className="lg:hidden mr-4 p-2 text-surface-400 hover:text-white rounded-lg hover:bg-surface-800 transition-colors" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex-1" />
+          <div className="flex-1 flex items-center gap-4">
+            {user?.role === 'ROLE_ADMIN' && (
+               <div className="hidden sm:flex items-center gap-2 bg-surface-800/80 px-3 py-1.5 rounded-lg border border-surface-700/50 shadow-sm">
+                  <Store className="w-4 h-4 text-primary-400" />
+                  <select 
+                     className="bg-transparent text-sm font-medium text-surface-200 outline-none border-none cursor-pointer focus:ring-0 [&>option]:bg-surface-800 [&>option]:text-white"
+                     value={activeOutletId}
+                     onChange={(e) => {
+                         setActiveOutletId(e.target.value);
+                         window.location.reload();
+                     }}
+                  >
+                    <option value="all">🏢 All Branches</option>
+                    {outlets.map(o => (
+                       <option key={o.id} value={o.id}>📍 {o.name}</option>
+                    ))}
+                  </select>
+               </div>
+            )}
+            
+            {user?.role === 'ROLE_EMPLOYEE' && (
+               <div className="hidden sm:flex items-center gap-2 bg-surface-800/80 px-3 py-1.5 rounded-lg border border-surface-700/50 shadow-sm">
+                  <Store className="w-4 h-4 text-primary-400" />
+                  <span className="text-sm font-medium text-surface-200">Terminal Active</span>
+               </div>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-xs text-surface-400">Connected</span>

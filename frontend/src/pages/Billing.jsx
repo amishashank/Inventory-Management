@@ -7,19 +7,39 @@ import toast from 'react-hot-toast';
 const fmtCurrency = (v) => Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function Billing() {
-  const { user } = useAuth();
+  const { user, activeOutletId } = useAuth();
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
-  const [gstRate, setGstRate] = useState('18');
   const [loading, setLoading] = useState(false);
   const [createdBill, setCreatedBill] = useState(null);
+  const [activeSchemes, setActiveSchemes] = useState([]);
   const printRef = useRef(null);
 
-  useEffect(() => { productAPI.getAll().then((r) => setProducts(r.data)).catch(() => {}); }, []);
+  useEffect(() => { 
+    if (activeOutletId !== 'all') {
+        productAPI.getAll().then((r) => setProducts(r.data)).catch(() => {});
+        // Import discountAPI from api.js manually or via import update if needed
+        import('../services/api').then(mod => {
+           mod.discountAPI.getActive().then(r => setActiveSchemes(r.data)).catch(() => {});
+        });
+    }
+  }, [activeOutletId]);
+
+  if (activeOutletId === 'all') {
+    return (
+       <div className="flex flex-col items-center justify-center py-20 px-8 text-center bg-surface-900/50 rounded-3xl border border-surface-700/50 shadow-2xl mt-12 mx-4 sm:mx-12">
+           <div className="w-24 h-24 mb-6 bg-primary-500/20 rounded-full flex items-center justify-center">
+               <ShoppingCart className="w-12 h-12 text-primary-400" />
+           </div>
+           <h2 className="text-2xl font-black text-white mb-3">Select a Branch to Start Billing</h2>
+           <p className="text-surface-400 max-w-lg text-lg leading-relaxed">You are currently viewing global aggregated inventory. Please select a specific physical branch from the top header to operate the terminal and deduct physical stock.</p>
+       </div>
+    );
+  }
 
   const filteredProducts = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))
@@ -32,7 +52,7 @@ export default function Billing() {
       setCart(cart.map((i) => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
       if (product.quantity < 1) { toast.error('Out of stock'); return; }
-      setCart([...cart, { productId: product.id, name: product.name, price: Number(product.price), quantity: 1, maxQty: product.quantity }]);
+      setCart([...cart, { productId: product.id, name: product.name, price: Number(product.price), quantity: 1, maxQty: product.quantity, gstRate: Number(product.gstRate || 0), categoryId: product.category?.id }]);
     }
   };
 
@@ -45,20 +65,56 @@ export default function Billing() {
     }));
   };
 
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const gstPct = parseFloat(gstRate) || 0;
-  const cgstPct = gstPct / 2;
-  const sgstPct = gstPct / 2;
-  const cgstAmt = subtotal * cgstPct / 100;
-  const sgstAmt = subtotal * sgstPct / 100;
-  const totalTax = cgstAmt + sgstAmt;
-  const grandTotal = subtotal + totalTax;
+  const calculateDiscount = (item, lineTotal) => {
+      let maxDiscount = 0;
+      for (const scheme of activeSchemes) {
+          if (scheme.applicableCategory && item.categoryId !== scheme.applicableCategory.id) continue;
+          if (scheme.minPurchaseAmount && lineTotal < scheme.minPurchaseAmount) continue;
+          
+          let discount = 0;
+          if (scheme.discountType === 'PERCENTAGE') {
+              discount = lineTotal * (scheme.value / 100);
+          } else if (scheme.discountType === 'FLAT') {
+              discount = Math.min(scheme.value, lineTotal);
+          } else if (scheme.discountType === 'BUY_ONE_GET_ONE') {
+              if (item.quantity >= 2) {
+                  const freeItems = Math.floor(item.quantity / 2);
+                  discount = item.price * freeItems;
+              }
+          }
+          if (discount > maxDiscount) maxDiscount = discount;
+      }
+      return maxDiscount;
+  };
+
+  let subtotal = 0;
+  let totalDiscount = 0;
+  let totalTax = 0;
+  const uniqueTaxes = {};
+
+  cart.forEach(i => {
+    const lineSubtotal = i.price * i.quantity;
+    const itemDiscount = calculateDiscount(i, lineSubtotal);
+    const taxableAmount = lineSubtotal - itemDiscount;
+    
+    subtotal += lineSubtotal;
+    totalDiscount += itemDiscount;
+    
+    const itemTax = taxableAmount * (i.gstRate / 100);
+    totalTax += itemTax;
+    
+    const rateKey = i.gstRate.toString();
+    if (!uniqueTaxes[rateKey]) uniqueTaxes[rateKey] = 0;
+    uniqueTaxes[rateKey] += itemTax;
+  });
+
+  const grandTotal = (subtotal - totalDiscount) + totalTax;
 
   const handleSubmit = async () => {
     if (!cart.length) { toast.error('Add items first'); return; }
     setLoading(true);
     try {
-      const res = await billAPI.create({ customerName, customerPhone, paymentMethod, taxPercentage: gstPct, items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })) });
+      const res = await billAPI.create({ customerName, customerPhone, paymentMethod, items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })) });
       setCreatedBill(res.data);
       toast.success('Bill generated!');
       setCart([]);
@@ -100,8 +156,6 @@ export default function Billing() {
 
   if (createdBill) {
     const b = createdBill;
-    const gst = Number(b.taxPercentage) || 0;
-    const halfGst = gst / 2;
     const taxAmt = Number(b.taxAmount) || 0;
     const halfTax = (taxAmt / 2).toFixed(2);
     return (
@@ -146,6 +200,7 @@ export default function Billing() {
                   <th style={{padding:'10px 12px', textAlign:'left', fontSize:'10px', fontWeight:'700', color:'#475569', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'2px solid #e2e8f0'}}>Item</th>
                   <th style={{padding:'10px 12px', textAlign:'right', fontSize:'10px', fontWeight:'700', color:'#475569', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'2px solid #e2e8f0'}}>Qty</th>
                   <th style={{padding:'10px 12px', textAlign:'right', fontSize:'10px', fontWeight:'700', color:'#475569', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'2px solid #e2e8f0'}}>Rate</th>
+                  <th style={{padding:'10px 12px', textAlign:'right', fontSize:'10px', fontWeight:'700', color:'#475569', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'2px solid #e2e8f0'}}>GST %</th>
                   <th style={{padding:'10px 12px', textAlign:'right', fontSize:'10px', fontWeight:'700', color:'#475569', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'2px solid #e2e8f0'}}>Amount</th>
                 </tr>
               </thead>
@@ -156,6 +211,7 @@ export default function Billing() {
                     <td style={{padding:'10px 12px', fontSize:'12px', color:'#1e293b', fontWeight:'500'}}>{it.productName}</td>
                     <td style={{padding:'10px 12px', fontSize:'12px', color:'#475569', textAlign:'right'}}>{it.quantity}</td>
                     <td style={{padding:'10px 12px', fontSize:'12px', color:'#475569', textAlign:'right'}}>₹{fmtCurrency(it.unitPrice)}</td>
+                    <td style={{padding:'10px 12px', fontSize:'12px', color:'#6366f1', textAlign:'right', fontWeight:'600'}}>{it.gstRate || 0}%</td>
                     <td style={{padding:'10px 12px', fontSize:'12px', color:'#1e293b', fontWeight:'600', textAlign:'right'}}>₹{fmtCurrency(it.lineTotal)}</td>
                   </tr>
                 ))}
@@ -166,9 +222,9 @@ export default function Billing() {
             <div style={{width:'280px', marginLeft:'auto', fontFamily:"'Segoe UI',Arial,sans-serif"}}>
               <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:'12px', color:'#64748b'}}><span>Subtotal</span><span style={{color:'#1e293b'}}>₹{fmtCurrency(b.subtotal)}</span></div>
               {Number(b.discountAmount) > 0 && <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:'12px', color:'#10b981'}}><span>Discount</span><span>-₹{fmtCurrency(b.discountAmount)}</span></div>}
-              {gst > 0 && <>
-                <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:'12px', color:'#6366f1'}}><span>CGST ({halfGst}%)</span><span>₹{halfTax}</span></div>
-                <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:'12px', color:'#6366f1'}}><span>SGST ({halfGst}%)</span><span>₹{halfTax}</span></div>
+              {taxAmt > 0 && <>
+                <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:'12px', color:'#6366f1'}}><span>CGST Total</span><span>₹{halfTax}</span></div>
+                <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:'12px', color:'#6366f1'}}><span>SGST Total</span><span>₹{halfTax}</span></div>
               </>}
               <div style={{display:'flex', justifyContent:'space-between', borderTop:'2px solid #6366f1', marginTop:'6px', paddingTop:'10px', fontSize:'16px', fontWeight:'800', color:'#1e293b'}}><span>Total</span><span>₹{fmtCurrency(b.totalAmount)}</span></div>
             </div>
@@ -192,68 +248,149 @@ export default function Billing() {
   }
 
   return (
-    <div className="space-y-6">
-      <div><h1 className="text-3xl font-bold text-white">New Bill</h1><p className="text-surface-400 mt-1">Create a GST-compliant invoice</p></div>
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..." className="w-full pl-11 pr-4 py-3 bg-surface-900/60 border border-surface-700/50 rounded-xl text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
+    <div className="space-y-6 lg:space-y-8">
+      <div>
+        <h1 className="text-3xl font-black tracking-tight text-white mb-2">Point of Sale</h1>
+        <p className="text-surface-400 font-medium">Create a new order & process payments securely</p>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 xl:gap-8 items-start">
+        {/* Products Column */}
+        <div className="xl:col-span-3 space-y-6">
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+              <Search className="w-5 h-5 text-surface-400 group-focus-within:text-primary-500 transition-colors" />
+            </div>
+            <input 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)} 
+              placeholder="Search products by name or SKU..." 
+              className="w-full pl-12 pr-4 py-4 bg-surface-900/60 hover:bg-surface-800/80 border border-surface-700/50 focus:border-primary-500/50 rounded-[1.25rem] text-white placeholder-surface-500 font-medium focus:outline-none focus:ring-4 focus:ring-primary-500/10 transition-all shadow-inner" 
+            />
           </div>
-          <div className="bg-surface-900/60 border border-surface-700/50 rounded-2xl overflow-hidden max-h-[500px] overflow-y-auto">
-            <table className="w-full">
-              <thead className="sticky top-0 bg-surface-800/90 backdrop-blur-sm"><tr className="border-b border-surface-700/50"><th className="text-left py-3 px-4 text-xs text-surface-400 uppercase">Product</th><th className="text-right py-3 px-4 text-xs text-surface-400 uppercase">Price</th><th className="text-right py-3 px-4 text-xs text-surface-400 uppercase">Stock</th><th className="py-3 px-4"></th></tr></thead>
-              <tbody className="divide-y divide-surface-800/50">
-                {filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-surface-800/30"><td className="py-3 px-4 text-sm text-white">{p.name}</td><td className="py-3 px-4 text-sm text-right text-white">₹{Number(p.price).toLocaleString()}</td><td className="py-3 px-4 text-sm text-right text-surface-400">{p.quantity}</td>
-                    <td className="py-3 px-4 text-right"><button onClick={() => addToCart(p)} disabled={p.quantity < 1} className="p-2 text-primary-400 hover:bg-primary-500/10 rounded-lg disabled:opacity-30"><Plus className="w-4 h-4" /></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2 pb-8">
+            {filteredProducts.map((p) => (
+              <div 
+                key={p.id} 
+                onClick={() => p.quantity > 0 && addToCart(p)}
+                className={`group bg-surface-800/40 hover:bg-surface-800/80 backdrop-blur-md border ${p.quantity > 0 ? 'border-surface-700/50 hover:border-primary-500/50 cursor-pointer' : 'border-danger/20 opacity-60 cursor-not-allowed'} rounded-2xl p-4 transition-all duration-300 flex items-center gap-4`}
+              >
+                {/* Glowing Initial Avatar */}
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500/20 to-indigo-500/20 border border-primary-500/20 flex items-center justify-center flex-shrink-0 shadow-[inset_0_0_15px_rgba(99,102,241,0.2)]">
+                  <span className="text-primary-400 font-bold text-xl uppercase tracking-wider">{p.name.charAt(0)}</span>
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <h4 className={`font-semibold truncate transition-colors ${p.quantity > 0 ? 'text-white group-hover:text-primary-200' : 'text-surface-400'}`}>{p.name}</h4>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-emerald-400 font-bold text-sm bg-emerald-500/10 px-2 py-0.5 rounded-md">₹{Number(p.price).toLocaleString()}</span>
+                    <span className="text-surface-500 text-xs px-2 py-0.5 rounded-md bg-surface-900/50 font-medium">{p.quantity} on hand</span>
+                  </div>
+                </div>
+
+                <button 
+                  disabled={p.quantity < 1}
+                  onClick={(e) => { e.stopPropagation(); addToCart(p); }}
+                  className="w-10 h-10 shrink-0 rounded-full bg-surface-700/40 group-hover:bg-primary-500 text-surface-400 group-hover:text-white flex items-center justify-center transition-all disabled:opacity-0 shadow-sm"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+            ))}
+            {filteredProducts.length === 0 && (
+              <div className="col-span-full py-16 text-center text-surface-500">
+                <p>No products found matching "{search}"</p>
+              </div>
+            )}
           </div>
         </div>
-        <div className="lg:col-span-2">
-          <div className="bg-surface-900/60 border border-surface-700/50 rounded-2xl p-5 space-y-4">
-            <h3 className="font-semibold text-white flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-primary-400" /> Cart ({cart.length})</h3>
-            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name" className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white placeholder-surface-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
-            <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white placeholder-surface-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
-            <div className="grid grid-cols-2 gap-3">
-              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50">
-                <option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option>
-              </select>
-              <div className="relative">
-                <input type="number" min="0" max="28" step="1" value={gstRate} onChange={(e) => setGstRate(e.target.value)} className="w-full px-4 py-2.5 pr-14 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 text-xs font-medium">% GST</span>
+
+        {/* Cart/Checkout Panel */}
+        <div className="xl:col-span-2 relative">
+          <div className="sticky top-6 bg-surface-900/60 backdrop-blur-2xl border border-white/5 rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.5)] ring-1 ring-white/10 space-y-6">
+            <div className="flex items-center justify-between pb-4 border-b border-surface-700/50">
+              <h3 className="text-xl font-black text-white flex items-center gap-3">
+                <div className="p-2.5 bg-primary-500/20 rounded-xl text-primary-400"><ShoppingCart className="w-5 h-5" /></div>
+                Current Order
+              </h3>
+              <span className="bg-primary-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]">{cart.length} Items</span>
+            </div>
+
+            {/* Inputs Container */}
+            <div className="space-y-4">
+              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer Name (Optional)" className="w-full px-4 py-3.5 bg-surface-950/50 hover:bg-surface-900 border border-surface-700/50 focus:border-primary-500 rounded-xl text-white placeholder-surface-500 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary-500/20 transition-all shadow-inner" />
+              <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone Number" className="w-full px-4 py-3.5 bg-surface-950/50 hover:bg-surface-900 border border-surface-700/50 focus:border-primary-500 rounded-xl text-white placeholder-surface-500 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-primary-500/20 transition-all shadow-inner" />
+              <div className="grid grid-cols-1 gap-4">
+                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full px-4 py-3.5 bg-surface-950/50 border border-surface-700/50 focus:border-primary-500 rounded-xl text-white text-sm font-medium focus:outline-none hover:bg-surface-900 transition-all shadow-inner appearance-none relative">
+                  <option value="CASH">Cash Payment</option>
+                  <option value="CARD">Card Payment</option>
+                  <option value="UPI">UPI</option>
+                </select>
               </div>
             </div>
 
-            {!cart.length ? <p className="text-sm text-surface-500 text-center py-6">Add products to cart</p> : (
-              <div className="space-y-3 max-h-[250px] overflow-y-auto">
-                {cart.map((i) => (
-                  <div key={i.productId} className="flex items-center gap-3 bg-surface-800/30 rounded-xl p-3">
-                    <div className="flex-1 min-w-0"><p className="text-sm font-medium text-white truncate">{i.name}</p><p className="text-xs text-surface-400">₹{i.price} × {i.quantity}</p></div>
-                    <div className="flex items-center gap-1"><button onClick={() => updateQty(i.productId, -1)} className="p-1 bg-surface-700 rounded"><Minus className="w-3 h-3 text-surface-300" /></button><span className="text-sm text-white w-6 text-center">{i.quantity}</span><button onClick={() => updateQty(i.productId, 1)} className="p-1 bg-surface-700 rounded"><Plus className="w-3 h-3 text-surface-300" /></button></div>
-                    <p className="text-sm font-semibold text-white w-16 text-right">₹{(i.price * i.quantity).toLocaleString()}</p>
-                    <button onClick={() => setCart(cart.filter((c) => c.productId !== i.productId))} className="p-1 text-surface-500 hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
+            {/* Cart Items */}
+            <div className="space-y-3 min-h-[160px] max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
+              {!cart.length ? (
+                 <div className="h-full flex flex-col items-center justify-center text-surface-500 space-y-4 py-12">
+                   <div className="p-4 bg-surface-800/50 rounded-full inset-shadow-sm"><ShoppingCart className="w-8 h-8 opacity-40 text-surface-400" /></div>
+                   <p className="text-sm font-medium">Add products to start cart</p>
+                 </div>
+              ) : cart.map((i) => (
+                <div key={i.productId} className="flex items-center gap-3 md:gap-4 bg-surface-800/40 hover:bg-surface-800/60 transition-colors border border-surface-700/30 rounded-2xl p-3 pr-4">
+                  <div className="w-10 h-10 rounded-full bg-surface-950/50 border border-surface-700/50 flex items-center justify-center text-surface-300 font-bold text-xs uppercase shrink-0 shadow-inner">
+                    {i.name.substring(0, 2)}
                   </div>
-                ))}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{i.name}</p>
+                    <p className="text-xs text-primary-400 font-medium mt-0.5">₹{i.price} <span className="text-surface-500 inline-block ml-1">• {i.gstRate}% GST</span></p>
+                  </div>
+                  <div className="flex items-center bg-surface-950/50 rounded-full p-1 border border-surface-700/50 shadow-inner">
+                    <button onClick={() => updateQty(i.productId, -1)} className="w-6 h-6 flex items-center justify-center text-surface-400 hover:text-white hover:bg-surface-700/80 rounded-full transition-colors"><Minus className="w-3 h-3" /></button>
+                    <span className="w-6 text-center text-xs font-bold text-white shrink-0">{i.quantity}</span>
+                    <button onClick={() => updateQty(i.productId, 1)} className="w-6 h-6 flex items-center justify-center text-surface-400 hover:text-white hover:bg-surface-700/80 rounded-full transition-colors"><Plus className="w-3 h-3" /></button>
+                  </div>
+                  <div className="flex flex-col items-end shrink-0 w-[50px] md:w-[65px]">
+                    <p className="font-bold text-white text-[13px] md:text-sm truncate w-full text-right tracking-tight">₹{(i.price * i.quantity).toLocaleString()}</p>
+                  </div>
+                  <button onClick={() => setCart(cart.filter((c) => c.productId !== i.productId))} className="p-1.5 md:p-2 text-surface-500 hover:text-danger hover:bg-danger/10 rounded-full transition-colors shrink-0">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Checkout Totals */}
+            {cart.length > 0 && (
+              <div className="bg-surface-950/50 rounded-2xl p-5 space-y-3 border border-surface-800 shadow-inner">
+                <div className="flex justify-between text-sm text-surface-400 font-medium"><span>Subtotal (Excl. Tax)</span><span className="text-white">₹{subtotal.toLocaleString()}</span></div>
+                {totalDiscount > 0 && (
+                    <div className="flex justify-between text-sm font-bold text-emerald-400">
+                      <span>Discount Schemes Applied</span>
+                      <span>-₹{totalDiscount.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                    </div>
+                )}
+                {Object.keys(uniqueTaxes).map(rate => parseFloat(uniqueTaxes[rate]) > 0 ? (
+                  <div key={rate} className="flex justify-between text-xs text-primary-400/80 font-medium">
+                    <span>GST ({rate}%)</span>
+                    <span>₹{uniqueTaxes[rate].toFixed(2)}</span>
+                  </div>
+                ) : null)}
+                <div className="pt-3 border-t border-surface-800 flex justify-between items-center text-xl font-black text-white">
+                  <span>Total</span>
+                  <span className="text-primary-400">₹{grandTotal.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+                </div>
               </div>
             )}
 
-            {cart.length > 0 && (
-              <div className="border-t border-surface-700/50 pt-4 space-y-1.5">
-                <div className="flex justify-between text-sm"><span className="text-surface-400">Subtotal</span><span className="text-white">₹{subtotal.toLocaleString()}</span></div>
-                {gstPct > 0 && (
-                  <>
-                    <div className="flex justify-between text-xs"><span className="text-primary-400">CGST ({cgstPct}%)</span><span className="text-primary-400">₹{cgstAmt.toFixed(2)}</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-primary-400">SGST ({sgstPct}%)</span><span className="text-primary-400">₹{sgstAmt.toFixed(2)}</span></div>
-                  </>
-                )}
-                <div className="flex justify-between text-lg font-bold pt-1.5 border-t border-surface-700/50"><span className="text-white">Total</span><span className="text-primary-300">₹{grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
-              </div>
-            )}
-            <button onClick={handleSubmit} disabled={!cart.length || loading} className="w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 disabled:opacity-50 transition-all hover:from-emerald-500 hover:to-emerald-400">{loading ? 'Generating...' : 'Generate Bill'}</button>
+            <button 
+              onClick={handleSubmit} 
+              disabled={!cart.length || loading} 
+              className="w-full py-4 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-500 hover:to-indigo-500 text-white font-bold text-[15px] tracking-wide rounded-2xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] disabled:opacity-40 disabled:hover:shadow-none transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99] disabled:transform-none"
+            >
+              {loading ? 'Processing Transaction...' : 'Complete Order'}
+            </button>
           </div>
         </div>
       </div>

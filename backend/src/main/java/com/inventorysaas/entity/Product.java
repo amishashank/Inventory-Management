@@ -36,14 +36,19 @@ public class Product {
     @Column(precision = 12, scale = 2)
     private BigDecimal costPrice;
 
-    @Column(nullable = false)
+    @Transient
     private Integer quantity;
 
+    @Transient
     private Integer reorderLevel;
 
     private String unit;
 
     private String description;
+
+    @Column(precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal gstRate = new BigDecimal("18.00");
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)

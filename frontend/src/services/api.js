@@ -8,6 +8,14 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+
+  const activeOutletId = localStorage.getItem('activeOutletId');
+  if (activeOutletId && activeOutletId !== 'all') {
+    config.params = { ...config.params, outletId: activeOutletId };
+  } else if (activeOutletId === 'all') {
+    config.params = { ...config.params, outletId: 'all' };
+  }
+  
   return config;
 });
 
@@ -52,6 +60,16 @@ export const productAPI = {
   create: (data) => api.post('/products', data),
   update: (id, data) => api.put(`/products/${id}`, data),
   delete: (id) => api.delete(`/products/${id}`),
+};
+
+export const outletAPI = {
+  getAll: () => api.get('/outlets'),
+  create: (data) => api.post('/outlets', data),
+};
+
+// Stocks
+export const stockAPI = {
+  update: (productId, data) => api.put(`/stocks/product/${productId}`, data),
 };
 
 // Discounts

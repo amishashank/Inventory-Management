@@ -43,57 +43,97 @@ async function seedData() {
       { name: 'Groceries', description: 'Daily essential groceries' },
       { name: 'Clothing', description: 'Apparel and fashion' },
       { name: 'Home & Kitchen', description: 'Appliances and kitchenware' },
-      { name: 'Stationery', description: 'Books, pens, and paper' }
+      { name: 'Stationery', description: 'Books, pens, and paper' },
+      { name: 'Jewelry', description: 'Gold, silver, and precious stones' },
+      { name: 'Automobile Parts', description: 'Spares and accessories for vehicles' },
+      { name: 'Pharma & Health', description: 'Medicines and healthcare products' },
+      { name: 'Furniture', description: 'Beds, sofas, and wooden goods' },
+      { name: 'Toys & Games', description: 'Kids toys and board games' }
     ];
 
+    const allCatsRes = await axios.get(`${API_URL}/categories`, authConfig);
+    const existingCats = allCatsRes.data;
+    
     const categoryMap = {};
     for (const cat of categoriesToCreate) {
-      console.log(`Creating category: ${cat.name}`);
-      try {
-         const cRes = await axios.post(`${API_URL}/categories`, cat, authConfig);
-         categoryMap[cat.name] = cRes.data.id;
-      } catch (err) {
-         if (err.response && err.response.data && err.response.data.message && err.response.data.message.includes('uk_category_name')) {
-            console.log(`Category ${cat.name} already exists, fetching its id...`);
-            const allCats = await axios.get(`${API_URL}/categories`, authConfig);
-            const existingCat = allCats.data.find(c => c.name === cat.name);
-            if (existingCat) { categoryMap[cat.name] = existingCat.id; }
-         } else {
-            console.error(`Error creating category ${cat.name}:`, err.response ? err.response.data : err.message);
+      const existing = existingCats.find(c => c.name === cat.name);
+      if (existing) {
+         console.log(`Category ${cat.name} already exists. Using ID ${existing.id}`);
+         categoryMap[cat.name] = existing.id;
+      } else {
+         console.log(`Creating category: ${cat.name}`);
+         try {
+           const cRes = await axios.post(`${API_URL}/categories`, cat, authConfig);
+           categoryMap[cat.name] = cRes.data.id;
+         } catch (err) {
+           console.error(`Error creating category ${cat.name}:`, err.response ? err.response.data : err.message);
          }
       }
     }
 
-    // 3. Create Products
-    const productsToCreate = [
-      { name: 'Smartphone Pro Max', sku: 'ELEC-001', categoryId: categoryMap['Electronics'], price: 99999, costPrice: 85000, quantity: 50, reorderLevel: 10, unit: 'PCS' },
-      { name: 'Wireless Headphones', sku: 'ELEC-002', categoryId: categoryMap['Electronics'], price: 4999, costPrice: 3000, quantity: 120, reorderLevel: 20, unit: 'PCS' },
-      { name: '4K Smart TV 55"', sku: 'ELEC-003', categoryId: categoryMap['Electronics'], price: 54999, costPrice: 45000, quantity: 15, reorderLevel: 5, unit: 'PCS' },
-      { name: 'Power Bank 20000mAh', sku: 'ELEC-004', categoryId: categoryMap['Electronics'], price: 1999, costPrice: 1200, quantity: 200, reorderLevel: 30, unit: 'PCS' },
-      { name: 'Gaming Mouse', sku: 'ELEC-005', categoryId: categoryMap['Electronics'], price: 2999, costPrice: 1500, quantity: 80, reorderLevel: 15, unit: 'PCS' },
-      
-      { name: 'Organic Premium Rice 5kg', sku: 'GROC-001', categoryId: categoryMap['Groceries'], price: 450, costPrice: 350, quantity: 200, reorderLevel: 50, unit: 'BAG' },
-      { name: 'Cold Pressed Olive Oil 1L', sku: 'GROC-002', categoryId: categoryMap['Groceries'], price: 899, costPrice: 700, quantity: 80, reorderLevel: 15, unit: 'BTL' },
-      { name: 'Whole Wheat Bread', sku: 'GROC-003', categoryId: categoryMap['Groceries'], price: 50, costPrice: 30, quantity: 40, reorderLevel: 10, unit: 'PKT' },
-      { name: 'Almonds 500g', sku: 'GROC-004', categoryId: categoryMap['Groceries'], price: 650, costPrice: 500, quantity: 60, reorderLevel: 20, unit: 'PKT' },
-      { name: 'Green Tea 100 Bags', sku: 'GROC-005', categoryId: categoryMap['Groceries'], price: 250, costPrice: 150, quantity: 100, reorderLevel: 25, unit: 'BOX' },
-      
-      { name: 'Men\'s Cotton T-Shirt', sku: 'CLOTH-001', categoryId: categoryMap['Clothing'], price: 499, costPrice: 250, quantity: 150, reorderLevel: 30, unit: 'PCS' },
-      { name: 'Women\'s Denim Jacket', sku: 'CLOTH-002', categoryId: categoryMap['Clothing'], price: 1999, costPrice: 1200, quantity: 60, reorderLevel: 10, unit: 'PCS' },
-      { name: 'Sports Running Shoes', sku: 'CLOTH-003', categoryId: categoryMap['Clothing'], price: 2499, costPrice: 1500, quantity: 85, reorderLevel: 15, unit: 'PRS' },
-      { name: 'Kids Winter Sweater', sku: 'CLOTH-004', categoryId: categoryMap['Clothing'], price: 899, costPrice: 500, quantity: 40, reorderLevel: 10, unit: 'PCS' },
-      { name: 'Leather Belt', sku: 'CLOTH-005', categoryId: categoryMap['Clothing'], price: 599, costPrice: 300, quantity: 110, reorderLevel: 20, unit: 'PCS' },
-
-      { name: 'Non-Stick Cookware Set', sku: 'HOME-001', categoryId: categoryMap['Home & Kitchen'], price: 3499, costPrice: 2000, quantity: 45, reorderLevel: 8, unit: 'SET' },
-      { name: 'Vacuum Cleaner', sku: 'HOME-002', categoryId: categoryMap['Home & Kitchen'], price: 7999, costPrice: 6000, quantity: 20, reorderLevel: 4, unit: 'PCS' },
-      { name: 'Ceramic Dinner Set', sku: 'HOME-003', categoryId: categoryMap['Home & Kitchen'], price: 2499, costPrice: 1500, quantity: 30, reorderLevel: 10, unit: 'SET' },
-      { name: 'Microfiber Towel 4-Pack', sku: 'HOME-004', categoryId: categoryMap['Home & Kitchen'], price: 499, costPrice: 250, quantity: 80, reorderLevel: 15, unit: 'PKT' },
-
-      { name: 'Premium Notebook Set of 5', sku: 'STAT-001', categoryId: categoryMap['Stationery'], price: 299, costPrice: 150, quantity: 300, reorderLevel: 50, unit: 'SET' },
-      { name: 'Blue Gel Pens Box (50 pcs)', sku: 'STAT-002', categoryId: categoryMap['Stationery'], price: 400, costPrice: 200, quantity: 100, reorderLevel: 20, unit: 'BOX' },
-      { name: 'Desk Organizer', sku: 'STAT-003', categoryId: categoryMap['Stationery'], price: 350, costPrice: 180, quantity: 60, reorderLevel: 15, unit: 'PCS' },
-      { name: 'A4 Printer Paper (500 Sheets)', sku: 'STAT-004', categoryId: categoryMap['Stationery'], price: 220, costPrice: 140, quantity: 150, reorderLevel: 40, unit: 'REAM' }
+    // 2.5 Create Outlets
+    const outletsData = [
+      { name: 'Main Branch', address: '100 Business Pkwy', phone: '100-200-3000' },
+      { name: 'Downtown Outlet', address: '200 Metro St', phone: '100-200-3001' },
+      { name: 'Airport Kiosk', address: 'Terminal A', phone: '100-200-3002' }
     ];
+    const outletIds = [];
+    console.log('Fetching/Creating Outlets...');
+    const existingOutletsRes = await axios.get(`${API_URL}/outlets`, authConfig);
+    const existingOutlets = existingOutletsRes.data;
+    for (const out of outletsData) {
+        const existing = existingOutlets.find(o => o.name === out.name);
+        if (existing) {
+            outletIds.push(existing.id);
+        } else {
+            console.log(`Creating Outlet: ${out.name}`);
+            const outRes = await axios.post(`${API_URL}/outlets`, out, authConfig);
+            outletIds.push(outRes.data.id);
+        }
+    }
+
+    // 3. Create Products with varied GST Slabs
+    const gstSlabs = [0, 0.25, 3, 5, 12, 18, 28];
+    const adjectives = ['Premium', 'Pro', 'Classic', 'Modern', 'Eco', 'Super', 'Advanced', 'Basic', 'Ultra', 'Smart'];
+    const nounsMap = {
+      'Electronics': ['Drone', 'TV', 'Headphones', 'Speaker', 'Phone', 'Tablet', 'Monitor', 'Keyboard', 'Watch', 'Camera'],
+      'Groceries': ['Rice', 'Tea', 'Coffee', 'Spices', 'Honey', 'Almonds', 'Olive Oil', 'Bread', 'Cereal', 'Pasta'],
+      'Clothing': ['Jacket', 'T-Shirt', 'Jeans', 'Sneakers', 'Sweater', 'Dress', 'Scarf', 'Hat', 'Belt', 'Socks'],
+      'Home & Kitchen': ['Blender', 'Sofa', 'Mug', 'Pan', 'Vacuum', 'Toaster', 'Knife Set', 'Rug', 'Lamp', 'Towel'],
+      'Stationery': ['Pen', 'Notebook', 'Folder', 'Stapler', 'Marker', 'Desk Organizer', 'Eraser', 'Pencil', 'Tape', 'Ruler'],
+      'Jewelry': ['Ring', 'Necklace', 'Bracelet', 'Earrings', 'Pendant', 'Chain', 'Brooch', 'Diamond', 'Gold Coin', 'Silver Bar'],
+      'Automobile Parts': ['Tire', 'Battery', 'Wipers', 'Brake Pads', 'Oil Filter', 'Spark Plug', 'Headlight', 'Mirror', 'Seat Cover', 'Mat'],
+      'Pharma & Health': ['Vitamins', 'Bandages', 'Ointment', 'Cough Syrup', 'Thermometer', 'Mask', 'Sanitizer', 'Painkiller', 'Inhaler', 'Drops'],
+      'Furniture': ['Chair', 'Table', 'Bed', 'Bookshelf', 'Cabinet', 'Stool', 'Desk', 'Wardrobe', 'Hammock', 'Bench'],
+      'Toys & Games': ['Puzzle', 'Action Figure', 'Doll', 'Board Game', 'Lego Set', 'Yo-Yo', 'Kite', 'Teddy Bear', 'Car', 'Train Set']
+    };
+
+    const productsToCreate = [];
+
+    // Procedurally generate 50 products per category
+    for (const cat of categoriesToCreate) {
+      const catId = categoryMap[cat.name];
+      const nouns = nounsMap[cat.name] || ['Item', 'Product', 'Widget'];
+      const catPrefix = cat.name.substring(0, 4).toUpperCase();
+      
+      for (let i = 1; i <= 50; i++) {
+        const noun = nouns[Math.floor(Math.random() * nouns.length)];
+        const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const price = Math.floor(Math.random() * (5000 - 50 + 1)) + 50; // Random price between 50 and 5000
+        const costPrice = Math.floor(price * 0.7); // 30% margin
+        const gstRate = gstSlabs[Math.floor(Math.random() * gstSlabs.length)];
+        
+        productsToCreate.push({
+          name: `${adj} ${noun} V${i}`,
+          sku: `${catPrefix}-${i}-${Math.floor(Math.random() * 1000)}`,
+          categoryId: catId,
+          price: price,
+          costPrice: costPrice,
+          unit: 'PCS',
+          gstRate: gstRate
+        });
+      }
+    }
 
     for (const prod of productsToCreate) {
       if (!prod.categoryId) {
@@ -102,7 +142,19 @@ async function seedData() {
       }
       console.log(`Creating product: ${prod.name}`);
       try {
-        await axios.post(`${API_URL}/products`, prod, authConfig);
+        const prodRes = await axios.post(`${API_URL}/products`, prod, authConfig);
+        const newProductId = prodRes.data.id;
+        
+        // 4. Update Stock for Each Outlet
+        for (const outId of outletIds) {
+           const quantity = Math.floor(Math.random() * 200) + 10;
+           const reorderLevel = Math.floor(quantity * 0.2);
+           await axios.put(`${API_URL}/stocks/product/${newProductId}`, {
+               outletId: outId,
+               quantity: quantity,
+               reorderLevel: reorderLevel
+           }, authConfig);
+        }
       } catch (err) {
         if (err.response && err.response.data && err.response.data.message && err.response.data.message.includes('uk_products_sku')) {
            console.log(`Product ${prod.name} (SKU: ${prod.sku}) already exists. Skipping.`);

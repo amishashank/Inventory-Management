@@ -12,6 +12,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.lang.NonNull;
 
 import java.io.IOException;
 
@@ -23,13 +24,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final CustomUserDetailsService userDetailsService;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain) throws ServletException, IOException {
         String token = getTokenFromRequest(request);
 
         if (StringUtils.hasText(token) && tokenProvider.validateToken(token)) {
-            Long userId = tokenProvider.getUserIdFromToken(token);
+            io.jsonwebtoken.Claims claims = tokenProvider.getClaimsFromToken(token);
+            Long userId = Long.parseLong(claims.getSubject());
             UserDetails userDetails = userDetailsService.loadUserById(userId);
 
             UsernamePasswordAuthenticationToken authentication =
@@ -38,8 +40,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            // Store userId as request attribute for easy access in controllers
             request.setAttribute("userId", userId);
+            request.setAttribute("role", claims.get("role"));
+            
+            Object adminId = claims.get("adminId");
+            if (adminId != null) {
+                request.setAttribute("adminId", Long.parseLong(adminId.toString()));
+            }
+            
+            Object outletId = claims.get("outletId");
+            if (outletId != null) {
+                request.setAttribute("outletId", Long.parseLong(outletId.toString()));
+            }
         }
 
         filterChain.doFilter(request, response);

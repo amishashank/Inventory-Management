@@ -18,34 +18,49 @@ public class ProductController {
 
     private final InventoryService inventoryService;
 
+    private Long getOutletId(HttpServletRequest request) {
+        Object outletId = request.getAttribute("outletId");
+        if (outletId != null) return (Long) outletId;
+        String outletParam = request.getParameter("outletId");
+        if (outletParam != null && !outletParam.isEmpty() && !outletParam.equals("all")) {
+            return Long.parseLong(outletParam);
+        }
+        return null;
+    }
+
     @GetMapping
     public ResponseEntity<List<Product>> getAll(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(inventoryService.getProducts(userId));
+        Long outletId = getOutletId(request);
+        return ResponseEntity.ok(inventoryService.getProducts(userId, outletId));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Product> getById(@PathVariable Long id, HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(inventoryService.getProductById(id, userId));
+        Long outletId = getOutletId(request);
+        return ResponseEntity.ok(inventoryService.getProductById(id, userId, outletId));
     }
 
     @GetMapping("/category/{categoryId}")
     public ResponseEntity<List<Product>> getByCategory(@PathVariable Long categoryId, HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(inventoryService.getProductsByCategory(categoryId, userId));
+        Long outletId = getOutletId(request);
+        return ResponseEntity.ok(inventoryService.getProductsByCategory(categoryId, userId, outletId));
     }
 
     @GetMapping("/low-stock")
     public ResponseEntity<List<Product>> getLowStock(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(inventoryService.getLowStockProducts(userId));
+        Long outletId = getOutletId(request);
+        return ResponseEntity.ok(inventoryService.getLowStockProducts(userId, outletId));
     }
 
     @GetMapping("/search")
     public ResponseEntity<List<Product>> search(@RequestParam String q, HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(inventoryService.searchProducts(q, userId));
+        Long outletId = getOutletId(request);
+        return ResponseEntity.ok(inventoryService.searchProducts(q, userId, outletId));
     }
 
     @PostMapping

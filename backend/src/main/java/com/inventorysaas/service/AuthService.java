@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -28,17 +29,19 @@ public class AuthService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phone(request.getPhone())
                 .address(request.getAddress())
+                .role(com.inventorysaas.entity.Role.ROLE_ADMIN)
                 .build();
 
         user = userRepository.save(user);
 
-        String token = tokenProvider.generateToken(user.getId(), user.getEmail());
+        String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getRole().name(), null, null);
 
         return AuthResponse.builder()
                 .token(token)
                 .email(user.getEmail())
                 .shopName(user.getShopName())
                 .userId(user.getId())
+                .role(user.getRole().name())
                 .build();
     }
 
@@ -50,13 +53,18 @@ public class AuthService {
             throw new BadRequestException("Invalid email or password");
         }
 
-        String token = tokenProvider.generateToken(user.getId(), user.getEmail());
+        Long adminId = user.getAdmin() != null ? user.getAdmin().getId() : null;
+        Long outletId = user.getAssignedOutlet() != null ? user.getAssignedOutlet().getId() : null;
+
+        String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getRole().name(), adminId, outletId);
 
         return AuthResponse.builder()
                 .token(token)
                 .email(user.getEmail())
                 .shopName(user.getShopName())
                 .userId(user.getId())
+                .role(user.getRole().name())
+                .outletId(outletId)
                 .build();
     }
 }

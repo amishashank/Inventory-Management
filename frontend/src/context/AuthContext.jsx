@@ -37,15 +37,27 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  const [activeOutletId, setActiveOutletIdState] = useState(() => {
+    return localStorage.getItem('activeOutletId') || 'all';
+  });
+
+  const setActiveOutletId = (id) => {
+    localStorage.setItem('activeOutletId', id);
+    setActiveOutletIdState(id);
+    // Reload the page or force re-fetch if needed, but since activeOutletId is in context,
+    // components can depend on it in their useEffects!
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('activeOutletId');
     setUser(null);
     toast.success('Logged out successfully');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, register, logout, loading, activeOutletId, setActiveOutletId }}>
       {children}
     </AuthContext.Provider>
   );

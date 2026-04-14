@@ -12,7 +12,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Optional<Product> findByIdAndUserId(Long id, Long userId);
     List<Product> findByUserIdAndCategoryId(Long userId, Long categoryId);
 
-    @Query("SELECT p FROM Product p WHERE p.user.id = :userId AND p.quantity <= p.reorderLevel")
+    @Query("SELECT DISTINCT p FROM Product p JOIN ProductStock ps ON p.id = ps.product.id WHERE p.user.id = :userId AND ps.quantity <= ps.reorderLevel")
     List<Product> findLowStockProducts(@Param("userId") Long userId);
 
     @Query("SELECT p FROM Product p WHERE p.user.id = :userId AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%')))")
@@ -20,6 +20,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     long countByUserId(Long userId);
 
-    @Query("SELECT COUNT(p) FROM Product p WHERE p.user.id = :userId AND p.quantity <= p.reorderLevel")
+    @Query("SELECT COUNT(DISTINCT p) FROM Product p JOIN ProductStock ps ON p.id = ps.product.id WHERE p.user.id = :userId AND ps.quantity <= ps.reorderLevel")
     long countLowStockByUserId(@Param("userId") Long userId);
 }

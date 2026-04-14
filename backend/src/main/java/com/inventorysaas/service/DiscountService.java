@@ -18,6 +18,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class DiscountService {
 
     private final DiscountSchemeRepository discountRepository;

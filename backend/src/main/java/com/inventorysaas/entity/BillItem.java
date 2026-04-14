@@ -42,4 +42,16 @@ public class BillItem {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal lineTotal;
+
+    @Column(precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal gstRate = BigDecimal.ZERO;
+
+    @Column(precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal cgstAmount = BigDecimal.ZERO;
+
+    @Column(precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal sgstAmount = BigDecimal.ZERO;
 }

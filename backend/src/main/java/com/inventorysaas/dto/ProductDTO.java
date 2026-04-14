@@ -21,8 +21,6 @@ public class ProductDTO {
 
     private BigDecimal costPrice;
 
-    @NotNull(message = "Quantity is required")
-    @Min(value = 0, message = "Quantity cannot be negative")
     private Integer quantity;
 
     private Integer reorderLevel;
@@ -30,4 +28,6 @@ public class ProductDTO {
     private String unit;
 
     private String description;
+
+    private BigDecimal gstRate;
 }

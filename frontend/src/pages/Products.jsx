@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { productAPI, categoryAPI } from '../services/api';
-import { Plus, Edit2, Trash2, Package, Search, AlertTriangle } from 'lucide-react';
+import { productAPI, categoryAPI, stockAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { Plus, Edit2, Trash2, Package, Search, AlertTriangle, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Products() {
+  const { activeOutletId } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -11,7 +13,7 @@ export default function Products() {
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('');
-  const emptyForm = { name: '', sku: '', categoryId: '', price: '', costPrice: '', quantity: '', reorderLevel: '', unit: '', description: '' };
+  const emptyForm = { name: '', sku: '', categoryId: '', price: '', costPrice: '', quantity: '', reorderLevel: '', unit: '', description: '', gstRate: '18' };
   const [form, setForm] = useState(emptyForm);
 
   const fetchData = async () => {
@@ -27,12 +29,37 @@ export default function Products() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const payload = { ...form, price: Number(form.price), costPrice: form.costPrice ? Number(form.costPrice) : null, quantity: Number(form.quantity), reorderLevel: form.reorderLevel ? Number(form.reorderLevel) : null, categoryId: form.categoryId ? Number(form.categoryId) : null };
+    const reqForm = { ...form };
+    delete reqForm.quantity;
+    delete reqForm.reorderLevel;
+
+    const payload = { ...reqForm, price: Number(form.price), costPrice: form.costPrice ? Number(form.costPrice) : null, categoryId: form.categoryId ? Number(form.categoryId) : null, gstRate: Number(form.gstRate) };
+    
     try {
-      if (editing) { await productAPI.update(editing.id, payload); toast.success('Product updated'); }
-      else { await productAPI.create(payload); toast.success('Product created'); }
+      let productId;
+      if (editing) { 
+          const res = await productAPI.update(editing.id, payload); 
+          productId = res.data.id;
+          toast.success('Product updated'); 
+      }
+      else { 
+          const res = await productAPI.create(payload); 
+          productId = res.data.id;
+          toast.success('Product created'); 
+      }
+
+      // If a specific branch is selected, update physical stock
+      if (activeOutletId !== 'all') {
+          await stockAPI.update(productId, {
+             quantity: Number(form.quantity || 0),
+             reorderLevel: form.reorderLevel ? Number(form.reorderLevel) : 0,
+             outletId: activeOutletId
+          });
+          toast.success('Branch Stock Updated!');
+      }
+
       setShowModal(false); setEditing(null); setForm(emptyForm); fetchData();
-    } catch (err) { toast.error(err.response?.data?.message || 'Error'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Error saving product'); }
   };
 
   const handleDelete = async (id) => {
@@ -42,7 +69,7 @@ export default function Products() {
 
   const openEdit = (p) => {
     setEditing(p);
-    setForm({ name: p.name, sku: p.sku || '', categoryId: p.category?.id || '', price: p.price, costPrice: p.costPrice || '', quantity: p.quantity, reorderLevel: p.reorderLevel || '', unit: p.unit || '', description: p.description || '' });
+    setForm({ name: p.name, sku: p.sku || '', categoryId: p.category?.id || '', price: p.price, costPrice: p.costPrice || '', quantity: p.quantity, reorderLevel: p.reorderLevel || '', unit: p.unit || '', description: p.description || '', gstRate: p.gstRate || '18' });
     setShowModal(true);
   };
 
@@ -96,6 +123,7 @@ export default function Products() {
                   <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">SKU</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Category</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Price</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">GST Slab</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Stock</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-surface-400 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -110,6 +138,7 @@ export default function Products() {
                     <td className="py-3 px-4 text-sm font-mono text-surface-400">{p.sku || '—'}</td>
                     <td className="py-3 px-4"><span className="text-xs px-2.5 py-1 bg-surface-800 text-surface-300 rounded-full">{p.category?.name || 'Uncategorized'}</span></td>
                     <td className="py-3 px-4 text-sm text-right font-semibold text-white">₹{Number(p.price).toLocaleString()}</td>
+                    <td className="py-3 px-4 text-sm text-right text-surface-400">{p.gstRate || 0}%</td>
                     <td className="py-3 px-4 text-right">
                       <span className={`inline-flex items-center gap-1 text-sm font-medium ${p.reorderLevel && p.quantity <= p.reorderLevel ? 'text-amber-400' : 'text-emerald-400'}`}>
                         {p.reorderLevel && p.quantity <= p.reorderLevel && <AlertTriangle className="w-3.5 h-3.5" />}
@@ -134,7 +163,15 @@ export default function Products() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
           <div className="bg-surface-900 border border-surface-700/50 rounded-2xl p-6 w-full max-w-lg shadow-2xl my-8">
-            <h3 className="text-xl font-bold text-white mb-4">{editing ? 'Edit Product' : 'New Product'}</h3>
+            <h3 className="text-xl font-bold text-white mb-2">{editing ? 'Edit Product' : 'New Product'}</h3>
+            
+            {activeOutletId === 'all' && (
+              <div className="bg-primary-900/30 border border-primary-500/30 rounded-xl p-3 mb-4 flex gap-3 text-primary-300">
+                 <Info className="w-5 h-5 shrink-0" />
+                 <p className="text-sm">You are viewing global products. Physical stock cannot be edited unless you select a specific branch from the header.</p>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
@@ -160,14 +197,30 @@ export default function Products() {
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Cost Price</label>
                   <input type="number" step="0.01" value={form.costPrice} onChange={(e) => update('costPrice', e.target.value)} className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
                 </div>
+                {activeOutletId !== 'all' && (
+                  <div>
+                    <label className="block text-sm font-medium text-surface-300 mb-1.5">Branch Quantity *</label>
+                    <input required type="number" min="0" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
+                  </div>
+                )}
                 <div>
-                  <label className="block text-sm font-medium text-surface-300 mb-1.5">Quantity *</label>
-                  <input required type="number" min="0" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
+                  <label className="block text-sm font-medium text-primary-400 font-semibold mb-1.5">GST Slab *</label>
+                  <select required value={form.gstRate} onChange={(e) => update('gstRate', e.target.value)} className="w-full px-4 py-2.5 bg-surface-800/80 border border-primary-500/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 font-medium">
+                    <option value="0">0% - Exempted</option>
+                    <option value="0.25">0.25% - Precious Stones</option>
+                    <option value="3">3% - Metals</option>
+                    <option value="5">5% - Essentials</option>
+                    <option value="12">12% - General Goods</option>
+                    <option value="18">18% - Standard Rate</option>
+                    <option value="28">28% - Luxury Goods</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-surface-300 mb-1.5">Reorder Level</label>
-                  <input type="number" min="0" value={form.reorderLevel} onChange={(e) => update('reorderLevel', e.target.value)} className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
-                </div>
+                {activeOutletId !== 'all' && (
+                  <div>
+                    <label className="block text-sm font-medium text-surface-300 mb-1.5">Reorder Level</label>
+                    <input type="number" min="0" value={form.reorderLevel} onChange={(e) => update('reorderLevel', e.target.value)} className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-surface-300 mb-1.5">Unit</label>
                   <input value={form.unit} onChange={(e) => update('unit', e.target.value)} placeholder="pcs, kg, ltr..." className="w-full px-4 py-2.5 bg-surface-800/50 border border-surface-600/50 rounded-xl text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50" />

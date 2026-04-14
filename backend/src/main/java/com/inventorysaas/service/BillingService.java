@@ -7,7 +7,9 @@ import com.inventorysaas.exception.BadRequestException;
 import com.inventorysaas.exception.ResourceNotFoundException;
 import com.inventorysaas.repository.BillRepository;
 import com.inventorysaas.repository.DiscountSchemeRepository;
+import com.inventorysaas.repository.OutletRepository;
 import com.inventorysaas.repository.ProductRepository;
+import com.inventorysaas.repository.ProductStockRepository;
 import com.inventorysaas.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,14 +25,22 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class BillingService {
 
     private final BillRepository billRepository;
     private final ProductRepository productRepository;
     private final DiscountSchemeRepository discountRepository;
     private final UserRepository userRepository;
+    private final ProductStockRepository productStockRepository;
+    private final OutletRepository outletRepository;
 
-    public List<Bill> getBills(Long userId) {
+    public List<Bill> getBills(Long userId, Long outletId) {
+        if (outletId != null) {
+            return billRepository.findAll().stream()
+                .filter(b -> b.getOutlet() != null && b.getOutlet().getId().equals(outletId))
+                .toList(); // Quick fix: need a custom query in repository, but fine for now.
+        }
         return billRepository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
@@ -40,9 +50,16 @@ public class BillingService {
     }
 
     @Transactional
-    public Bill createBill(BillRequest request, Long userId) {
+    public Bill createBill(BillRequest request, Long userId, Long outletId) {
+        if (outletId == null) {
+            throw new BadRequestException("Bills must be processed at a specific outlet.");
+        }
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                
+        Outlet outlet = outletRepository.findById(outletId)
+                .orElseThrow(() -> new ResourceNotFoundException("Outlet not found"));
 
         List<DiscountScheme> activeSchemes = discountRepository.findActiveSchemes(userId, LocalDate.now());
 
@@ -52,6 +69,7 @@ public class BillingService {
                 .customerPhone(request.getCustomerPhone())
                 .paymentMethod(request.getPaymentMethod())
                 .user(user)
+                .outlet(outlet)
                 .items(new ArrayList<>())
                 .subtotal(BigDecimal.ZERO)
                 .discountAmount(BigDecimal.ZERO)
@@ -61,18 +79,29 @@ public class BillingService {
 
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal totalDiscount = BigDecimal.ZERO;
+        BigDecimal totalTax = BigDecimal.ZERO;
 
         for (BillItemRequest itemRequest : request.getItems()) {
             Product product = productRepository.findByIdAndUserId(itemRequest.getProductId(), userId)
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+                    
+            ProductStock stock = productStockRepository.findByProductIdAndOutletId(product.getId(), outletId)
+                    .orElseThrow(() -> new BadRequestException("Product " + product.getName() + " is not stocked at this outlet"));
 
-            if (product.getQuantity() < itemRequest.getQuantity()) {
+            if (stock.getQuantity() < itemRequest.getQuantity()) {
                 throw new BadRequestException("Insufficient stock for product: " + product.getName()
-                        + ". Available: " + product.getQuantity());
+                        + ". Available: " + stock.getQuantity());
             }
 
             BigDecimal lineSubtotal = product.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
-            BigDecimal itemDiscount = calculateDiscount(product, lineSubtotal, activeSchemes);
+            BigDecimal itemDiscount = calculateDiscount(product, lineSubtotal, activeSchemes, itemRequest.getQuantity());
+
+            BigDecimal taxableAmount = lineSubtotal.subtract(itemDiscount);
+            BigDecimal itemGstRate = product.getGstRate() != null ? product.getGstRate() : new BigDecimal("18.00");
+            
+            BigDecimal itemTaxAmount = taxableAmount.multiply(itemGstRate)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            BigDecimal halfItemTax = itemTaxAmount.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
 
             BillItem billItem = BillItem.builder()
                     .bill(bill)
@@ -82,33 +111,34 @@ public class BillingService {
                     .quantity(itemRequest.getQuantity())
                     .unitPrice(product.getPrice())
                     .discountApplied(itemDiscount)
-                    .lineTotal(lineSubtotal.subtract(itemDiscount))
+                    .lineTotal(taxableAmount)
+                    .gstRate(itemGstRate)
+                    .cgstAmount(halfItemTax)
+                    .sgstAmount(itemTaxAmount.subtract(halfItemTax))
                     .build();
 
             bill.getItems().add(billItem);
             subtotal = subtotal.add(lineSubtotal);
             totalDiscount = totalDiscount.add(itemDiscount);
+            totalTax = totalTax.add(itemTaxAmount);
 
-            // Deduct stock
-            product.setQuantity(product.getQuantity() - itemRequest.getQuantity());
-            productRepository.save(product);
+            // Deduct stock from the Outlet
+            stock.setQuantity(stock.getQuantity() - itemRequest.getQuantity());
+            productStockRepository.save(stock);
         }
 
-        BigDecimal taxPercentage = request.getTaxPercentage() != null ? request.getTaxPercentage() : BigDecimal.ZERO;
-        BigDecimal taxableAmount = subtotal.subtract(totalDiscount);
-        BigDecimal taxAmount = taxableAmount.multiply(taxPercentage)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal netTaxable = subtotal.subtract(totalDiscount);
 
         bill.setSubtotal(subtotal);
         bill.setDiscountAmount(totalDiscount);
-        bill.setTaxPercentage(taxPercentage);
-        bill.setTaxAmount(taxAmount);
-        bill.setTotalAmount(taxableAmount.add(taxAmount));
+        bill.setTaxPercentage(BigDecimal.ZERO); // Deprecated parameter logic
+        bill.setTaxAmount(totalTax);
+        bill.setTotalAmount(netTaxable.add(totalTax));
 
         return billRepository.save(bill);
     }
 
-    private BigDecimal calculateDiscount(Product product, BigDecimal lineTotal, List<DiscountScheme> schemes) {
+    private BigDecimal calculateDiscount(Product product, BigDecimal lineTotal, List<DiscountScheme> schemes, Integer quantity) {
         BigDecimal maxDiscount = BigDecimal.ZERO;
 
         for (DiscountScheme scheme : schemes) {
@@ -136,7 +166,10 @@ public class BillingService {
                     break;
                 case BUY_ONE_GET_ONE:
                     // BOGO: discount = price of one item (floor division for pairs)
-                    discount = product.getPrice();
+                    if (quantity >= 2) {
+                        int freeItems = quantity / 2;
+                        discount = product.getPrice().multiply(BigDecimal.valueOf(freeItems));
+                    }
                     break;
             }
 
